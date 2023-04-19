@@ -1,5 +1,6 @@
+import os
 from django.shortcuts import render
-from django.http import HttpResponse,JsonResponse
+from django.http import HttpResponse, JsonResponse
 import json
 import random
 from .models import Query, User
@@ -8,12 +9,15 @@ import time
 import datetime
 from django.forms.models import model_to_dict
 
+
+
+
 # 修饰器，用于验证token，token有效才执行被修饰的函数
 def check_token(func):
     def inner(request, *args, **kwargs):
-        # 获取token
+        # 获取headers中的token
         if request.method == 'GET':
-            token = request.GET.get('token')
+            token = request.META.get('HTTP_TOKEN')
             # 判断token是否存在
             if not token:
                 return HttpResponse(json.dumps({'code': '403', 'msg': "token不存在"}, ensure_ascii=False))
@@ -28,7 +32,7 @@ def check_token(func):
             if c_time < now_time:
                 return HttpResponse(json.dumps({'code': '403', 'msg': "token过期"}, ensure_ascii=False))
         if request.method == 'POST':
-            token = request.POST.get('token')
+            token = request.META.get('HTTP_TOKEN')
             # 判断token是否存在
             if not token:
                 return HttpResponse(json.dumps({'code': '403', 'msg': "token不存在"}, ensure_ascii=False))
@@ -144,21 +148,23 @@ def logout(request):
 def is_admin(func):
     def inner(request, *args, **kwargs):
         if request.method == 'POST':
-            token = request.POST.get('token')
+            token = request.META.get('HTTP_TOKEN')
             user = User.objects.filter(token=token).first()
             # 判断用户是否为管理员
             if user.permission == 0:
                 return HttpResponse(json.dumps({'code': '403', 'msg': "用户不是管理员"}, ensure_ascii=False))
             # 验证通过，执行被修饰的函数
         if request.method == 'GET':
-            token = request.GET.get('token')
+            token = request.META.get('HTTP_TOKEN')
             user = User.objects.filter(token=token).first()
             # 判断用户是否为管理员
             if user.permission == 0:
                 return HttpResponse(json.dumps({'code': '403', 'msg': "用户不是管理员"}, ensure_ascii=False))
             # 验证通过，执行被修饰的函数
         return func(request, *args, **kwargs)
+
     return inner
+
 
 # 管理员可调用此api，查看Query表中所有数据
 @check_token
@@ -172,3 +178,23 @@ def get_all_data(request):
     return HttpResponse(json.dumps({'code': '200', 'msg': "获取成功", 'data': data_list}, ensure_ascii=False))
 
 
+# 用于接收用户上传的xls文件，需要传入token，并且验证有管理员权限
+@check_token
+@is_admin
+def upload(request):
+    if request.method == 'POST':
+        file = request.FILES.get('xlsfile', None)
+        if file == None:
+            return HttpResponse(json.dumps({'code': '404', 'msg': "未发现文件"}, ensure_ascii=False))
+        # 判断文件类型是否为xls
+        print(file.name.split('.')[-1])
+        if file.name.split('.')[-1] != 'xls':
+            return HttpResponse(json.dumps({'code': '404', 'msg': "文件类型错误"}, ensure_ascii=False))
+        # 保存文件
+        file_path = os.getcwd() + '/api/file/' + file.name
+        with open(file_path, 'wb') as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+        return HttpResponse(json.dumps({'code': '200', 'msg': "上传成文件正在导入"}, ensure_ascii=False))
+    else:
+        return HttpResponse(json.dumps({'code': '404', 'msg': "请求方式错误"}, ensure_ascii=False))
