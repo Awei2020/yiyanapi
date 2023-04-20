@@ -8,8 +8,7 @@ import hashlib
 import time
 import datetime
 from django.forms.models import model_to_dict
-
-
+import xlrd
 
 
 # 修饰器，用于验证token，token有效才执行被修饰的函数
@@ -57,18 +56,15 @@ def get_data(request):
         return HttpResponse(json.dumps({'code': '403', 'msg': "查询路径无权限post"}, ensure_ascii=False))
     # 获取数据库中所有的数据
     if request.method == 'GET':
-        full = Query.objects.all()
-        num = full.count()
+        # 获取数据中所有id
+        ids = Query.objects.values_list('id', flat=True)
+        query_list = list(ids)
+        num = len(query_list)
         ran = random.randint(0, num)
-        text = full[ran].text
-        likes = full[ran].likes
+        data = Query.objects.filter(id=query_list[ran]).first()
+        text = data.text
+        likes = data.likes
         return HttpResponse(json.dumps({"code": 200, "msg": text, "likes": likes}, ensure_ascii=False))
-    full = Query.objects.all()
-    num = full.count()
-    ran = random.randint(0, num)
-    text = full[ran].text
-    likes = full[ran].likes
-    return HttpResponse(json.dumps({"code": 200, "msg": text, "likes": likes}, ensure_ascii=False))
 
 
 # 用户注册，需要传入用户名，邮箱，密码，密码使用md5加密之后存入User表中
@@ -195,6 +191,21 @@ def upload(request):
         with open(file_path, 'wb') as f:
             for chunk in file.chunks():
                 f.write(chunk)
-        return HttpResponse(json.dumps({'code': '200', 'msg': "上传成文件正在导入"}, ensure_ascii=False))
+        # 读取excel内容导入数据库
+        data = xlrd.open_workbook(file_path)
+        table = data.sheets()[0]
+        nrows = table.nrows
+        nclos = table.ncols
+        # 判断的excel是否为空
+        if nrows == 0 or nclos != 1:
+            return HttpResponse(json.dumps({'code': '404', 'msg': "文件为空或格式不正确"}, ensure_ascii=False))
+        for i in range(1, nrows):
+            text = table.row_values(i)[0]
+            # 判断是否有重复数据
+            if Query.objects.filter(text=text).exists():
+                continue
+            Query.objects.create(text=text)
+            print(text, '导入成功')
+        return HttpResponse(json.dumps({'code': '200', 'msg': "导入文件成功"}, ensure_ascii=False))
     else:
         return HttpResponse(json.dumps({'code': '404', 'msg': "请求方式错误"}, ensure_ascii=False))
