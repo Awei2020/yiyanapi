@@ -7,5 +7,6 @@ urlpatterns = [
     path('logout/', views.logout),
     path('admin/', views.get_all_data),
     path('upload/', views.upload),
+    path('export/', views.export),
 
 ]

@@ -1,6 +1,6 @@
 import os
-from django.shortcuts import render
-from django.http import HttpResponse, JsonResponse
+import xlwt
+from django.http import HttpResponse, FileResponse
 import json
 import random
 from .models import Query, User
@@ -74,7 +74,7 @@ def register(request):
     username = request.POST.get('username')
     email = request.POST.get('email')
     password = request.POST.get('password')
-    if username == None or email == None or password == None:
+    if username is None or email is None or password is None:
         return HttpResponse(json.dumps({'code': '403', 'msg': "参数不完整"}, ensure_ascii=False))
     # md5加密密码
     md5 = hashlib.md5()
@@ -97,7 +97,7 @@ def login(request):
         return HttpResponse(json.dumps({'code': '403', 'msg': "登录路径无权限get"}, ensure_ascii=False))
     username = request.POST.get('username')
     password = request.POST.get('password')
-    if username == None or password == None:
+    if username is None or password is None:
         return HttpResponse(json.dumps({'code': '403', 'msg': "参数不完整"}, ensure_ascii=False))
     # md5加密密码
     md5 = hashlib.md5()
@@ -126,7 +126,7 @@ def logout(request):
     if request.method == 'GET':
         return HttpResponse(json.dumps({'code': '403', 'msg': "注销路径无权限get"}, ensure_ascii=False))
     token = request.POST.get('token')
-    if token == None:
+    if token is None:
         return HttpResponse(json.dumps({'code': '403', 'msg': "参数不完整"}, ensure_ascii=False))
     # 判断token是否存在
     if not User.objects.filter(token=token).exists():
@@ -180,14 +180,15 @@ def get_all_data(request):
 def upload(request):
     if request.method == 'POST':
         file = request.FILES.get('xlsfile', None)
-        if file == None:
+        if file is None:
             return HttpResponse(json.dumps({'code': '404', 'msg': "未发现文件"}, ensure_ascii=False))
         # 判断文件类型是否为xls
         print(file.name.split('.')[-1])
         if file.name.split('.')[-1] != 'xls':
             return HttpResponse(json.dumps({'code': '404', 'msg': "文件类型错误"}, ensure_ascii=False))
         # 保存文件
-        file_path = os.getcwd() + '/api/file/' + file.name
+        date_time = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        file_path = os.getcwd() + '/api/file/' + date_time + file.name
         with open(file_path, 'wb') as f:
             for chunk in file.chunks():
                 f.write(chunk)
@@ -209,3 +210,34 @@ def upload(request):
         return HttpResponse(json.dumps({'code': '200', 'msg': "导入文件成功"}, ensure_ascii=False))
     else:
         return HttpResponse(json.dumps({'code': '404', 'msg': "请求方式错误"}, ensure_ascii=False))
+
+# 导出数据库内容到excel
+@check_token
+@is_admin
+def export(request):
+    if request.method == 'GET':
+        # 获取所有数据
+        data = Query.objects.all()
+        # 创建excel
+        workbook = xlwt.Workbook(encoding='utf-8')
+        # 创建sheet
+        sheet = workbook.add_sheet('sheet1')
+        # 写入数据
+        for i in range(len(data)):
+            sheet.write(i, 0, data[i].text)
+        # 保存文件
+        date_time = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        file_path = os.getcwd() + '/api/export/' + date_time + '.xls'
+        workbook.save(file_path)
+
+        # 返回文件
+        response = FileResponse(open(file_path, 'rb'))
+        response['Content-Type'] = 'application/octet-stream'
+        response['Content-Disposition'] = 'attachment;filename=%s' % date_time + '_export' + '.xls'
+        return response
+    else:
+        return HttpResponse(json.dumps({'code': '404', 'msg': "请求方式错误"}, ensure_ascii=False))
+
+
+
+
